@@ -1,0 +1,13 @@
+# Çapraz platform (Windows geliştirme makinesi dahil) kurulabilir bağımlılıklar.
+numpy
+opencv-python
+pymavlink
+pytest
+
+# Yalnızca Raspberry Pi OS üzerinde, ayrı olarak kurulmalıdır (Windows/genel
+# Linux'ta pip ile kurulamaz; libcamera sistem paketlerine bağımlıdır):
+#   sudo apt install -y python3-picamera2
+# camera_source.py DIŞINDA hiçbir modül picamera2 import etmez, bu yüzden
+# geliştirme makinesinde bu paket kurulu olmadan da testler ve diğer
+# modüller çalışır.
+# picamera2

@@ -1,0 +1,22 @@
+Ana proje dosyalarımız:
+1.vision_servo_trigger.py
+   - Mevcut çalışan ana monolitik prototip.
+   - Kamera + hedef tespit + HSV renk doğrulama + confidence + Pixhawk + servo.
+
+2. calibration_click_measure.py
+   - Kamera/ölçek kalibrasyon verisi toplama aracı.
+
+3. analyze_calibration.py
+   - calibration_log.csv verisini analiz edip CALIB_K_SHORT ve MIN_SIDE_LENGTH üretir.
+
+4. calibration_log.csv
+   - Toplanan kalibrasyon ölçümleri.
+
+5. calibration_result.txt
+   - Son kalibrasyon sonucu.
+
+6. heartbeat_test.py
+   - Pixhawk MAVLink bağlantı/heartbeat testi.
+
+7. gps_test.py
+   - Pixhawk GPS, attitude, relative altitude ve groundspeed okuma testi.

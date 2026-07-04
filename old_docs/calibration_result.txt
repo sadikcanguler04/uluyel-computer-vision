@@ -1,0 +1,5 @@
+CALIBRATION RESULT
+CALIB_K_SHORT = 664.25
+MIN_SIDE_LENGTH = 17
+expected_2m_short_px = 44.28
+expected_4m_short_px = 88.57
