@@ -142,6 +142,40 @@ def test_compute_release_plan_succeeds_with_configured_geofence():
     assert len(mission.release_order) == 2
 
 
+def test_release_order_follows_discovery_order_not_distance():
+    """
+    WP sırası "ilk bulunan hedef" olmalı, "en yakın hedef" DEĞİL.
+    Bunu kanıtlamak için: önce 4x4_TARGET'i (merkez dışı piksel ile,
+    ~6m uzakta hesaplanacak şekilde) sonra 2x2_TARGET'i (tam merkez
+    piksel ile, uçağın TAM ÜZERİNDE / 0m uzaklıkta hesaplanacak şekilde)
+    buluyoruz. "En yakın önce" mantığı olsaydı 2x2 (0m) ilk WP olurdu;
+    "ilk bulunan önce" mantığında 4x4 ilk WP olmalı çünkü o önce bulundu.
+    """
+    mission = SearchAndDropMission(_cfg())
+    pixhawk = _FakePixhawk()
+
+    for i in range(3):
+        tracker_result = {"confirmed": True, "class_count": 5, "target_class": "4x4_TARGET"}
+        mission.observe(
+            now=1.0 + i * 0.1, pixhawk=pixhawk, tracker_result=tracker_result,
+            best_candidate=_candidate("4x4_TARGET", center=(220, 240)),  # merkez dışı -> ~6m uzakta
+            distance_m=30.0,
+        )
+
+    for i in range(3):
+        tracker_result = {"confirmed": True, "class_count": 5, "target_class": "2x2_TARGET"}
+        mission.observe(
+            now=2.0 + i * 0.1, pixhawk=pixhawk, tracker_result=tracker_result,
+            best_candidate=_candidate("2x2_TARGET", center=(320, 240)),  # tam merkez -> 0m (uçağın üzerinde)
+            distance_m=30.0,
+        )
+
+    assert mission.phase == SearchPhase.BOTH_FOUND
+    assert mission.compute_release_plan(pixhawk) is True
+
+    assert mission.release_order == ["4x4_TARGET", "2x2_TARGET"]
+
+
 def test_full_chain_releases_both_targets_in_order_then_done():
     mission = SearchAndDropMission(_cfg())
     pixhawk = _FakePixhawk()

@@ -29,24 +29,17 @@ SERVO_HOME_PWM = 1000
 SERVO_45_PWM = 1250
 
 # =========================================================
-# Servo — YENİ dual-servo mimarisi (GEÇİCİ / PLACEHOLDER DEĞERLER)
+# Servo — YENİ dual-servo mimarisi
 # =========================================================
-# ⚠️ AŞAĞIDAKİ DEĞERLER SAHADA DOĞRULANMADI — kullanıcının açık isteğiyle
-# ("kafana göre doldur, ben deneme-yanılma ile sana gerçek değerleri
-# vereceğim") geçici/tahmini olarak dolduruldu, TAHMİN OLDUĞU AÇIKÇA
-# İŞARETLİDİR:
-#   - Servo A kanalı, eski/kanıtlanmış tek-servo kanalıyla (8) AYNI
-#     tutuldu — bu kanalın bu uçakta gerçekten PWM'e yanıt verdiği
-#     zaten biliniyor, bu yüzden en düşük riskli tahmin budur.
-#   - Servo B kanalı (9), yaygın bir sıradaki-kanal varsayımıdır,
-#     DOĞRULANMADI.
-#   - PWM home/release değerleri, kanıtlanmış legacy servo değerleriyle
-#     (1000/1250) aynı tutuldu — gerçek mekanizma farklı bir aralık
-#     gerektirebilir.
-# Saha testiyle (deneme-yanılma) doğru değerler netleşince BU YORUMU
-# SİLİP gerçek değerleri buraya yazın.
-SERVO_A_BLUE_PAYLOAD_NO = 8      # TAHMİN — Servo A -> mavi yük (kırmızı hedef görülünce)
-SERVO_B_RED_PAYLOAD_NO = 9       # TAHMİN — Servo B -> kırmızı yük (mavi hedef görülünce)
+# Kanal numaraları kullanıcı tarafından sahada DOĞRULANDI (gerçek Pixhawk
+# kablolaması):
+#   - Servo A (kanal 1): mavi yükü tutuyor, KIRMIZI hedef görülünce tetiklenir.
+#   - Servo B (kanal 5): kırmızı yükü tutuyor, MAVİ hedef görülünce tetiklenir.
+# ⚠️ PWM home/release değerleri HÂLÂ TAHMİNİ (kanıtlanmış legacy servo
+# değerleriyle 1000/1250 aynı tutuldu) — bunlar henüz deneme-yanılma ile
+# doğrulanmadı, gerçek mekanizma farklı bir PWM aralığı gerektirebilir.
+SERVO_A_BLUE_PAYLOAD_NO = 1      # DOĞRULANDI — Servo A -> mavi yük (kırmızı hedef görülünce)
+SERVO_B_RED_PAYLOAD_NO = 5       # DOĞRULANDI — Servo B -> kırmızı yük (mavi hedef görülünce)
 
 SERVO_A_HOME_PWM = 1000          # TAHMİN
 SERVO_A_RELEASE_PWM = 1250       # TAHMİN

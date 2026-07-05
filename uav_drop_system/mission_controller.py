@@ -15,7 +15,10 @@ Görev akışı:
   4. İkisi de sabitlenince: kalan tarama WP'leri SİLİNİR, her iki hedef
      için bırakma noktası hesaplanır (drop/ballistic + release_planner)
      ve geofence ile doğrulanır (planning/geofence.py), ardından bu iki
-     nokta yeni bir mission olarak YÜKLENİR (en yakın olandan başlanır).
+     nokta yeni bir mission olarak YÜKLENİR — sıralama HANGİSİ ÖNCE
+     BULUNDUYSA ona göre (en yakın olana göre DEĞİL): örn. önce kırmızı
+     bulunduysa, kırmızının bırakma noktası (mavi yükün bırakılacağı
+     yer) her zaman ilk WP olur.
   5. İHA bu WP'lere yaklaştıkça, güvenlik koşulları sağlanınca ve
      `config.FAZ2_DRIVES_RELEASE=True` olduğunda ilgili renkteki yük
      bırakılır (mavlink/servo_controller.DualPayloadServoController).
@@ -230,12 +233,13 @@ class SearchAndDropMission:
 
             self.release_points[target_class] = (release_lat, release_lon)
 
-        def _distance_from_now(target_class):
-            lat, lon = self.release_points[target_class]
-            n, e = gps_to_local_ned(own_lat, own_lon, lat, lon)
-            return (n ** 2 + e ** 2) ** 0.5
-
-        self.release_order = sorted(self.release_points.keys(), key=_distance_from_now)
+        # Ziyaret sırası: HANGİ SIRAYLA BULUNDUYSA o sırayla (en yakın olana
+        # göre değil). self.target_fixes bir dict olduğundan ve observe()
+        # içinde her sınıf yalnızca İLK onaylandığı anda eklendiğinden,
+        # anahtar sırası doğal olarak "keşif sırası"dır (Python 3.7+ dict
+        # ekleme sırasını korur). Yani: önce kırmızı bulunduysa, kırmızının
+        # bırakma noktası (mavi yükün bırakılacağı yer) her zaman ilk WP olur.
+        self.release_order = list(self.target_fixes.keys())
         self.phase = SearchPhase.REPLANNED
         self.last_reason = "RELEASE_PLAN_READY"
         return True
