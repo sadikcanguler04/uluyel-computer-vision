@@ -154,7 +154,15 @@ def is_perspective_square_candidate(contour, cfg):
     return True, info, "OK"
 
 
-def find_perspective_squares(frame_bgr, distance_m, distance_source, cfg):
+def find_perspective_squares(frame_bgr, distance_m, distance_source, cfg, debug_rejections=None):
+    """
+    debug_rejections: verilirse (bir liste), şekil aşamasında (BAD_CORNERS,
+    NOT_CONVEX, TOO_SMALL, BAD_ANGLE, BAD_FILL, TOUCH_BORDER, TOO_BIG_BBOX vb.)
+    elenen — ve normalde hiçbir yere kaydedilmeden sessizce atlanan — adayların
+    reddedilme nedenleri bu listeye eklenir. Varsayılan None: davranış ve dönüş
+    değerleri (candidates, rejected_candidates, edges) tamamen değişmez; bu
+    saha teşhisi için eklenmiş, opsiyonel/yan bir kanaldır.
+    """
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -181,6 +189,8 @@ def find_perspective_squares(frame_bgr, distance_m, distance_source, cfg):
         valid, info, reason = is_perspective_square_candidate(contour, cfg)
 
         if not valid:
+            if debug_rejections is not None:
+                debug_rejections.append(reason)
             continue
 
         info["distance_m"] = distance_m

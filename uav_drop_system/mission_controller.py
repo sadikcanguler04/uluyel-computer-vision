@@ -54,6 +54,7 @@ Gerçek yarışma/görev uçuşundan önce DEMO_MODE MUTLAKA False yapılmalı.
 """
 
 import time
+from collections import Counter
 from enum import Enum, auto
 
 import cv2
@@ -480,8 +481,9 @@ def run():
                 cfg.LAB_TEST_MODE, cfg.LAB_TEST_DISTANCE_M, cfg.MIN_VALID_ALTITUDE_M, cfg.ALTITUDE_STALE_SEC,
             )
 
+            shape_rejections = []
             candidates, rejected_candidates, edges = find_perspective_squares(
-                frame_bgr, distance_m, distance_source, cfg
+                frame_bgr, distance_m, distance_source, cfg, debug_rejections=shape_rejections
             )
             best_candidate = choose_best_candidate(candidates)
             tracker_result = tracker.update(now, best_candidate)
@@ -513,6 +515,10 @@ def run():
                 frame_count = 0
                 prev_time = now
 
+                if shape_rejections:
+                    top_reasons = Counter(shape_rejections).most_common(5)
+                    print(f"[DEBUG] Şekil aşaması red nedenleri: {top_reasons}")
+
             hud.draw_vision_hud(
                 frame_bgr, cfg,
                 candidates, rejected_candidates, best_candidate,
@@ -534,6 +540,14 @@ def run():
                 f"Fixed={status['fixed']} Released={status['released']}",
                 (30, hud.NEXT_FREE_Y + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, mission_color, 1,
             )
+
+            if shape_rejections:
+                top_reasons = Counter(shape_rejections).most_common(3)
+                reasons_text = " ".join(f"{reason}x{count}" for reason, count in top_reasons)
+                cv2.putText(
+                    frame_bgr, f"ShapeReject: {reasons_text}",
+                    (30, hud.NEXT_FREE_Y + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 165, 255), 1,
+                )
 
             hud.draw_calibration_warning(frame_bgr, cfg)
             hud.draw_lab_test_banner(frame_bgr, cfg)
