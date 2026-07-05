@@ -46,10 +46,10 @@ def test_debug_rejections_collects_shape_stage_failures_not_otherwise_visible():
     assert "TOO_SMALL" in debug_rejections  # ama artık debug kanalından görülebiliyor
 
 
-def test_default_canny_thresholds_match_legacy_prototype():
-    """old_docs/vision_servo_trigger.py'de sabit kodlanmış (20,70) ile aynı olmalı (davranış korunuyor)."""
-    assert config.CANNY_LOW == 20
-    assert config.CANNY_HIGH == 70
+def test_default_canny_thresholds_match_field_tuned_values():
+    """Saha testinde tune_detector.py ile bulunup kalıcı varsayılan yapılan değerler (dış mekan, gürültülü zemin)."""
+    assert config.CANNY_LOW == 30
+    assert config.CANNY_HIGH == 120
 
 
 def test_canny_thresholds_are_actually_read_from_config():
