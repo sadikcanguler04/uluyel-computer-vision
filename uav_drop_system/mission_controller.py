@@ -56,6 +56,17 @@ videosu için) tüm zinciri, GERÇEK servo tetiklemesi dahil, uçtan uca
 gösterebilirsin. ⚠️ Üzerinde gerçek yük TAKILIYSA servo hareketi yükü
 GERÇEKTEN düşürür — istemiyorsan yük takılı olmadan test edin.
 Gerçek yarışma/görev uçuşundan önce DEMO_MODE MUTLAKA False yapılmalı.
+
+DEMO_MODE'da "varış" sinyali: İHA durağan olduğundan gerçek uçuşta olduğu
+gibi GPS mesafesiyle bırakma noktasına "yaklaşma" simüle edilemez. Bunun
+yerine `check_arrival_and_release()`, sırada bekleyen hedefin (keşif
+sırasına göre — `release_order`/`current_target_class()`) kamerada TEKRAR
+doğrulanmasını "varış" sayar: örn. önce kırmızı bulunduysa, WP'ler
+yüklendikten sonra kamera kırmızıyı tekrar görüp doğrularsa mavi yük
+(kırmızının karşıtı) bırakılır; sıradaki hedef için de aynı şekilde
+tekrar görülmesi beklenir. Sıra disiplini ve tek seferlik `PayloadLock`
+gerçek uçuştaki gibi korunur. GERÇEK uçuşta (DEMO_MODE=False) bu dal hiç
+kullanılmaz, tek tetikleyici GPS mesafesi kalır.
 """
 
 import time
@@ -337,7 +348,7 @@ class SearchAndDropMission:
         remaining = [tc for tc in self.release_order if tc not in self.released]
         return remaining[0] if remaining else None
 
-    def check_arrival_and_release(self, pixhawk, servo_by_color):
+    def check_arrival_and_release(self, pixhawk, servo_by_color, tracker_result=None, best_candidate=None):
         cfg = self.cfg
         target_class = self.current_target_class()
 
@@ -346,25 +357,46 @@ class SearchAndDropMission:
             self.last_reason = "DONE"
             return
 
-        position, position_status = pixhawk.get_current_position(cfg.OBSERVATION_MAX_AGE_SEC)
+        demo_mode = getattr(cfg, "DEMO_MODE", False)
 
-        if position is None:
-            self.last_reason = f"NEED_POSITION({position_status})"
-            return
+        if demo_mode:
+            # Ofis/yer demosu: İHA durağan olduğundan GPS mesafesiyle gerçek
+            # yaklaşma simüle edilemez (EN_ROUTE hiçbir zaman kapanmaz).
+            # Bunun yerine "varış" sinyali olarak, sırada bekleyen hedefin
+            # (current_target_class — keşif sırasına göre, GPS'e göre değil)
+            # kamerada TEKRAR doğrulanmasını kullanıyoruz. Sıralama disiplini
+            # (release_order/tek seferlik PayloadLock) gerçek uçuştaki gibi
+            # AYNEN korunuyor — yalnızca "vardık mı" sinyalinin kaynağı
+            # değişiyor. GERÇEK uçuşta (DEMO_MODE=False) bu dal hiç
+            # kullanılmaz, GPS mesafesi tek tetikleyici olarak kalır.
+            seeing_current_target = (
+                tracker_result is not None
+                and tracker_result.get("confirmed")
+                and best_candidate is not None
+                and best_candidate.get("target_class") == target_class
+            )
 
-        own_lat, own_lon = position
-        release_lat, release_lon = self.release_points[target_class]
-        north_m, east_m = gps_to_local_ned(own_lat, own_lon, release_lat, release_lon)
-        distance_to_release = (north_m ** 2 + east_m ** 2) ** 0.5
+            if not seeing_current_target:
+                self.last_reason = f"WAITING_VISUAL_RECONFIRM({target_class})"
+                return
+        else:
+            position, position_status = pixhawk.get_current_position(cfg.OBSERVATION_MAX_AGE_SEC)
 
-        if distance_to_release > cfg.RELEASE_DISTANCE_THRESHOLD_M:
-            self.last_reason = f"EN_ROUTE({target_class},d={distance_to_release:.1f}m)"
-            return
+            if position is None:
+                self.last_reason = f"NEED_POSITION({position_status})"
+                return
+
+            own_lat, own_lon = position
+            release_lat, release_lon = self.release_points[target_class]
+            north_m, east_m = gps_to_local_ned(own_lat, own_lon, release_lat, release_lon)
+            distance_to_release = (north_m ** 2 + east_m ** 2) ** 0.5
+
+            if distance_to_release > cfg.RELEASE_DISTANCE_THRESHOLD_M:
+                self.last_reason = f"EN_ROUTE({target_class},d={distance_to_release:.1f}m)"
+                return
 
         groundspeed, _gs = pixhawk.get_current_groundspeed(cfg.OBSERVATION_MAX_AGE_SEC)
         flight_mode = getattr(pixhawk.master, "flightmode", None) if getattr(pixhawk, "master", None) else None
-
-        demo_mode = getattr(cfg, "DEMO_MODE", False)
 
         # DEMO_MODE=True iken stall-margin ve flight-mode kontrolleri
         # BİLİNÇLİ olarak atlanır: sabit duran bir uçakta groundspeed~0
@@ -590,7 +622,7 @@ def run():
                         )
 
             elif mission.phase == SearchPhase.REPLANNED:
-                mission.check_arrival_and_release(pixhawk, servo_by_color)
+                mission.check_arrival_and_release(pixhawk, servo_by_color, tracker_result, best_candidate)
 
             status = mission.status()
 

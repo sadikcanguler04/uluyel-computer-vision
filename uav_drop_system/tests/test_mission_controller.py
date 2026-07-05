@@ -300,13 +300,14 @@ def test_en_route_reason_when_far_from_release_point():
     assert mission.last_reason.startswith("EN_ROUTE")
 
 
-def test_demo_mode_releases_despite_stationary_ground_conditions():
+def test_demo_mode_releases_on_visual_reconfirmation_of_current_target():
     """
-    Gerçek yer demosu senaryosu: uçak sabit duruyor (groundspeed=0),
-    V_STALL_MPS henüz verilmedi (None, gerçek config.py'deki gibi),
-    uçuş modu AUTO/GUIDED değil (örn. MANUAL) — normalde bu üç durumun
-    HERHANGİ biri release'i engeller. DEMO_MODE=True iken hiçbiri
-    engellememeli ve servo GERÇEKTEN tetiklenmeli.
+    Ofis/yer demosu senaryosu: uçak sabit duruyor (groundspeed=0), GPS
+    mesafesiyle gerçek yaklaşma simüle edilemez. DEMO_MODE=True iken
+    "varış" sinyali, sırada bekleyen hedefin (release_order'daki ilk —
+    burada önce bulunan 2x2/kırmızı) kamerada TEKRAR doğrulanmasıdır.
+    V_STALL_MPS/uçuş modu kontrolleri de (gerçek uçuş dışı olduğundan)
+    atlanmalı ve servo GERÇEKTEN tetiklenmeli.
     """
     mission = SearchAndDropMission(_cfg(
         DEMO_MODE=True,
@@ -318,12 +319,56 @@ def test_demo_mode_releases_despite_stationary_ground_conditions():
     _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
     _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
     assert mission.compute_release_plan(pixhawk) is True
+    assert mission.release_order == ["2x2_TARGET", "4x4_TARGET"]
+
+    servo = _FakeServo()
+    tracker_result = {"confirmed": True, "class_count": 5, "target_class": "2x2_TARGET"}
+    best_candidate = _candidate("2x2_TARGET")
+
+    mission.check_arrival_and_release(
+        pixhawk, {"RED": servo, "BLUE": servo}, tracker_result, best_candidate
+    )
+
+    assert mission.released == {"2x2_TARGET"}
+    assert servo.released_colors == ["RED"]  # kırmızı hedefe karşıt renkli (kırmızı) yük
+
+
+def test_demo_mode_does_not_release_without_visual_reconfirmation():
+    """Görsel teyit yoksa (tracker_result/best_candidate verilmemişse) DEMO_MODE'da da release tetiklenmemeli."""
+    mission = SearchAndDropMission(_cfg(DEMO_MODE=True))
+    pixhawk = _FakePixhawk(groundspeed=0.0, flight_mode="MANUAL")
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
+    mission.compute_release_plan(pixhawk)
 
     servo = _FakeServo()
     mission.check_arrival_and_release(pixhawk, {"RED": servo, "BLUE": servo})
 
-    assert len(mission.released) == 1
-    assert servo.released_colors  # gerçekten .release() çağrıldı
+    assert len(mission.released) == 0
+    assert mission.last_reason == "WAITING_VISUAL_RECONFIRM(2x2_TARGET)"
+
+
+def test_demo_mode_ignores_reconfirmation_of_a_target_not_yet_due():
+    """Sırada olmayan (henüz current olmayan) hedefin görülmesi release'i tetiklememeli — sıra disiplini korunur."""
+    mission = SearchAndDropMission(_cfg(DEMO_MODE=True))
+    pixhawk = _FakePixhawk(groundspeed=0.0, flight_mode="MANUAL")
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
+    mission.compute_release_plan(pixhawk)
+    assert mission.release_order == ["2x2_TARGET", "4x4_TARGET"]
+
+    servo = _FakeServo()
+    tracker_result = {"confirmed": True, "class_count": 5, "target_class": "4x4_TARGET"}
+    best_candidate = _candidate("4x4_TARGET")  # henüz sırada olan 2x2 degil
+
+    mission.check_arrival_and_release(
+        pixhawk, {"RED": servo, "BLUE": servo}, tracker_result, best_candidate
+    )
+
+    assert len(mission.released) == 0
+    assert mission.last_reason == "WAITING_VISUAL_RECONFIRM(2x2_TARGET)"
 
 
 def test_demo_mode_computes_release_plan_when_groundspeed_never_arrives():
