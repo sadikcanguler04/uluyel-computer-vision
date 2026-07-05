@@ -177,6 +177,7 @@ class SearchAndDropMission:
         self.release_order = []
         self.released = set()
         self.last_reason = "SEARCHING"
+        self._demo_zero_groundspeed_warned = False
 
     def observe(self, now, pixhawk, tracker_result, best_candidate, distance_m):
         cfg = self.cfg
@@ -250,6 +251,23 @@ class SearchAndDropMission:
         distance_m, _source = pixhawk.get_current_distance_m(
             cfg.LAB_TEST_MODE, cfg.LAB_TEST_DISTANCE_M, cfg.MIN_VALID_ALTITUDE_M, cfg.ALTITUDE_STALE_SEC
         )
+
+        # DEMO_MODE (ofis/masa testi): İHA durağan olduğundan VFR_HUD hiç
+        # gelmeyebilir (groundspeed hep None kalır) ve bu NEED_DROP_INPUTS'a
+        # takılıp WP hesabını sonsuza dek engeller. Gerçek uçuşta groundspeed
+        # ZORUNLU kalır (lead_distance/alignment_distance için gerekli) —
+        # bu düşüş SADECE DEMO_MODE=True iken uygulanır.
+        if groundspeed is None and getattr(cfg, "DEMO_MODE", False):
+            if not self._demo_zero_groundspeed_warned:
+                print(
+                    "[UYARI] DEMO_MODE: gerçek groundspeed verisi yok (VFR_HUD gelmiyor, "
+                    "İHA durağan) — bırakma/hizalanma hesabında groundspeed=0.0 varsayılıyor. "
+                    "Gerçek uçuşta bu varsayım YAPILMAZ, groundspeed zorunludur."
+                )
+                self._demo_zero_groundspeed_warned = True
+
+            groundspeed = 0.0
+            gs_status = "DEMO_FALLBACK_ZERO"
 
         if position is None or groundspeed is None or attitude is None or distance_m is None:
             self.last_reason = f"NEED_DROP_INPUTS(pos={position_status},gs={gs_status},att={attitude_status})"
@@ -519,6 +537,8 @@ def run():
     show_edges = cfg.SHOW_EDGES
     show_rejected = cfg.SHOW_REJECTED
 
+    both_found_cleared = False
+
     prev_time = time.time()
     frame_count = 0
     fps = 0.0
@@ -544,8 +564,10 @@ def run():
                 mission.observe(now, pixhawk, tracker_result, best_candidate, distance_m)
 
                 if mission.phase == SearchPhase.BOTH_FOUND:
-                    print("[INFO] Her iki hedef de bulundu. Kalan tarama WP'leri temizleniyor...")
-                    uploader.clear_mission()
+                    if not both_found_cleared:
+                        print("[INFO] Her iki hedef de bulundu. Kalan tarama WP'leri temizleniyor...")
+                        uploader.clear_mission()
+                        both_found_cleared = True
 
                     if mission.compute_release_plan(pixhawk):
                         # Her hedef için İKİ WP: önce hizalanma (X) noktası,
@@ -579,7 +601,7 @@ def run():
                 frame_count = 0
                 prev_time = now
 
-                if shape_rejections:
+                if show_rejected and shape_rejections:
                     top_reasons = Counter(shape_rejections).most_common(5)
                     print(f"[DEBUG] Şekil aşaması red nedenleri: {top_reasons}")
 
@@ -605,7 +627,7 @@ def run():
                 (30, hud.NEXT_FREE_Y + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, mission_color, 1,
             )
 
-            if shape_rejections:
+            if show_rejected and shape_rejections:
                 top_reasons = Counter(shape_rejections).most_common(3)
                 reasons_text = " ".join(f"{reason}x{count}" for reason, count in top_reasons)
                 cv2.putText(

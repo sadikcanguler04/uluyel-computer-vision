@@ -41,6 +41,9 @@ class _FakePixhawk:
         return (self.lat, self.lon), "OK"
 
     def get_current_groundspeed(self, stale_sec):
+        if self.groundspeed is None:
+            return None, "NO_GROUNDSPEED"
+
         return self.groundspeed, "OK"
 
     def get_current_distance_m(self, lab_test_mode, lab_test_distance_m,
@@ -321,6 +324,35 @@ def test_demo_mode_releases_despite_stationary_ground_conditions():
 
     assert len(mission.released) == 1
     assert servo.released_colors  # gerçekten .release() çağrıldı
+
+
+def test_demo_mode_computes_release_plan_when_groundspeed_never_arrives():
+    """
+    Ofis/masa testi: İHA durağan olduğundan VFR_HUD hiç gelmeyebilir —
+    get_current_groundspeed() (None, "NO_GROUNDSPEED") döner. Bu normalde
+    NEED_DROP_INPUTS ile compute_release_plan()'ı sonsuza dek engeller.
+    DEMO_MODE=True iken groundspeed=0.0 varsayılarak plan yine de hesaplanmalı.
+    """
+    mission = SearchAndDropMission(_cfg(DEMO_MODE=True))
+    pixhawk = _FakePixhawk(groundspeed=None)
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
+
+    assert mission.compute_release_plan(pixhawk) is True
+    assert mission.last_reason == "RELEASE_PLAN_READY"
+
+
+def test_without_demo_mode_missing_groundspeed_blocks_release_plan():
+    """DEMO_MODE=False (gerçek uçuş varsayımı) iken groundspeed eksikliği hâlâ NEED_DROP_INPUTS ile engellemeli."""
+    mission = SearchAndDropMission(_cfg(DEMO_MODE=False))
+    pixhawk = _FakePixhawk(groundspeed=None)
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
+
+    assert mission.compute_release_plan(pixhawk) is False
+    assert "NEED_DROP_INPUTS" in mission.last_reason
 
 
 def test_without_demo_mode_stationary_ground_conditions_block_release():

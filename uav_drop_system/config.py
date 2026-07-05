@@ -57,7 +57,7 @@ FPS = 30
 USE_RGB_TO_BGR_CONVERSION = False
 
 SHOW_EDGES = False
-SHOW_REJECTED = True
+SHOW_REJECTED = False
 
 # =========================================================
 # Ofis / uçuş modu
