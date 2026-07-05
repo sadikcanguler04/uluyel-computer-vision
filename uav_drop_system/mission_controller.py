@@ -546,7 +546,9 @@ def run():
                 reasons_text = " ".join(f"{reason}x{count}" for reason, count in top_reasons)
                 cv2.putText(
                     frame_bgr, f"ShapeReject: {reasons_text}",
-                    (30, hud.NEXT_FREE_Y + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 165, 255), 1,
+                    # NOT: y=390, hud.draw_calibration_warning()'in sabit konumuyla
+                    # çakışmasın diye NEXT_FREE_Y+46 (391) değil +75 (420) kullanılıyor.
+                    (30, hud.NEXT_FREE_Y + 75), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 165, 255), 1,
                 )
 
             hud.draw_calibration_warning(frame_bgr, cfg)
