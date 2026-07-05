@@ -72,6 +72,7 @@ class PixhawkReader:
         self.last_lat = None
         self.last_lon = None
         self.last_position_time = 0.0
+        self.last_gps_fix_type = None
 
         self.last_groundspeed_mps = None
         self.last_groundspeed_time = 0.0
@@ -130,6 +131,17 @@ class PixhawkReader:
                 1
             )
 
+            # GPS_RAW_INT (gerçek fix tipi/uydu sayısı) genelde EXTENDED_STATUS
+            # grubunda yayınlanır — get_current_position()'ın gerçek bir GPS
+            # fix'i olup olmadığını doğrulayabilmesi için gerekli.
+            self.master.mav.request_data_stream_send(
+                self.target_system,
+                self.target_component,
+                mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS,
+                5,
+                1
+            )
+
             print("[OK] MAVLink data streams requested.")
 
         except Exception as e:
@@ -168,6 +180,9 @@ class PixhawkReader:
                 self.last_groundspeed_mps = msg.groundspeed
                 self.last_groundspeed_time = time.time()
 
+            elif msg_type == "GPS_RAW_INT":
+                self.last_gps_fix_type = msg.fix_type
+
     def get_current_attitude(self, stale_sec):
         """(roll, pitch, yaw) radyan döner; veri yoksa/bayatsa None, sebep string'i verir."""
         if self.last_roll is None:
@@ -178,10 +193,29 @@ class PixhawkReader:
 
         return (self.last_roll, self.last_pitch, self.last_yaw), "OK"
 
-    def get_current_position(self, stale_sec):
-        """(lat, lon) derece döner; veri yoksa/bayatsa None, sebep string'i verir."""
+    def get_current_position(self, stale_sec, min_fix_type=2):
+        """
+        (lat, lon) derece döner; veri yoksa/bayatsa/fix zayıfsa None, sebep
+        string'i verir.
+
+        NOT (bulunan hata): ArduPilot, GPS fix'i olmasa bile GLOBAL_POSITION_INT
+        mesajını (EKF tahmini, çoğunlukla (0,0)) periyodik olarak göndermeye
+        devam eder. Bu yüzden burada iki katmanlı doğrulama var:
+        1. Tam (0,0) yer tutucusunu her zaman reddet (gerçek bir GPS fix'i
+           neredeyse hiçbir zaman tam sıfır üretmez).
+        2. GPS_RAW_INT'ten gelen gerçek fix_type biliniyorsa (0=NO_GPS,
+           1=NO_FIX, 2=2D_FIX, 3=3D_FIX, ...), min_fix_type'ın altındaki
+           fix'leri reddet. GPS_RAW_INT henüz hiç gelmediyse (None) bu
+           kontrol atlanır — yalnızca (0,0) kontrolüne güvenilir.
+        """
         if self.last_lat is None:
             return None, "NO_GPS"
+
+        if self.last_lat == 0.0 and self.last_lon == 0.0:
+            return None, "GPS_NO_FIX_ZERO_COORDS"
+
+        if self.last_gps_fix_type is not None and self.last_gps_fix_type < min_fix_type:
+            return None, f"GPS_FIX_TOO_WEAK({self.last_gps_fix_type})"
 
         if time.time() - self.last_position_time > stale_sec:
             return None, "GPS_STALE"

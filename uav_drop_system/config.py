@@ -335,3 +335,12 @@ MISSION_ITEM_TIMEOUT_SEC = 3.0
 DEMO_MODE = True
 DEMO_GEOFENCE_RADIUS_M = 100.0
 DEMO_GPS_WAIT_TIMEOUT_SEC = 20.0
+
+# GPS'siz (iç mekan / uydu göremeyen bir yerde) test için: DEMO_GPS_WAIT_TIMEOUT_SEC
+# içinde gerçek bir GPS fix'i gelmezse, mission_controller.py çökmek yerine
+# bu yer tutucu (lat, lon) koordinatını GERÇEK KONUM DEĞİLMİŞ UYARISIYLA
+# kullanır. Varsayılan None — yani varsayılan davranış hâlâ "gerçek fix
+# gelmezse RuntimeError" (güvenli varsayım). GPS'siz test etmek istiyorsan
+# örn. şu an bulunduğun kabaca konumu (veya herhangi bir sahte değeri) buraya
+# gir: DEMO_FALLBACK_COORDS = (41.0, 29.0)
+DEMO_FALLBACK_COORDS = None

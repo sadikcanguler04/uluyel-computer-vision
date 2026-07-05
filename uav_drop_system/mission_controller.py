@@ -104,11 +104,18 @@ def _generate_demo_geofence(center_lat, center_lon, radius_m):
     return [ned_offset_to_gps(center_lat, center_lon, north, east) for north, east in corners_local]
 
 
-def _wait_for_gps_fix(pixhawk, timeout_sec, poll_interval_sec=0.25):
+def _wait_for_gps_fix(pixhawk, timeout_sec, poll_interval_sec=0.25, fallback_coords=None):
     """
     DEMO_MODE için: mevcut GPS konumu gelene kadar (heartbeat/stream
-    istekleri zaten connect() içinde yapıldı) mesajları okumaya devam
-    eder. Zaman aşımında RuntimeError fırlatır.
+    istekleri zaten connect() içinde yapıldı) mesajları okumaya devam eder.
+    pixhawk_reader.get_current_position() artık (0,0) yer tutucusunu ve
+    zayıf GPS fix'lerini reddettiğinden, gerçek bir 2D/3D fix gelmeden bu
+    döngü bitmez.
+
+    `fallback_coords` (config.DEMO_FALLBACK_COORDS) verilmişse ve
+    timeout_sec içinde gerçek fix gelmezse, RuntimeError yerine bu yer
+    tutucu koordinat LOUD bir uyarıyla kullanılır — GPS'siz iç mekan
+    testleri için. Verilmemişse (None, varsayılan) RuntimeError fırlatılır.
     """
     deadline = time.time() + timeout_sec
 
@@ -121,9 +128,20 @@ def _wait_for_gps_fix(pixhawk, timeout_sec, poll_interval_sec=0.25):
 
         time.sleep(poll_interval_sec)
 
+    if fallback_coords is not None:
+        print("#" * 70)
+        print(f"[UYARI] {timeout_sec}s içinde GERÇEK GPS fix alınamadı.")
+        print(f"        config.DEMO_FALLBACK_COORDS kullanılıyor: {fallback_coords}")
+        print("        BU GERÇEK BİR KONUM DEĞİLDİR — yalnızca GPS'siz/iç mekan")
+        print("        testleri içindir, gerçek görevde kullanılmamalı.")
+        print("#" * 70)
+        return fallback_coords
+
     raise RuntimeError(
         f"{timeout_sec}s içinde Pixhawk'tan geçerli GPS konumu alınamadı "
-        "(DEMO_MODE için gerekli). GPS fix'i olduğundan emin olun."
+        "(DEMO_MODE için gerekli). GPS fix'i olduğundan emin olun (açık "
+        "havada, uydu görebilen bir yerde), ya da GPS'siz test için "
+        "config.DEMO_FALLBACK_COORDS = (lat, lon) tanımlayın."
     )
 
 
@@ -360,7 +378,10 @@ def run():
         print("=" * 70)
         print("[INFO] GPS fix bekleniyor...")
 
-        own_lat, own_lon = _wait_for_gps_fix(pixhawk, cfg.DEMO_GPS_WAIT_TIMEOUT_SEC)
+        own_lat, own_lon = _wait_for_gps_fix(
+            pixhawk, cfg.DEMO_GPS_WAIT_TIMEOUT_SEC,
+            fallback_coords=getattr(cfg, "DEMO_FALLBACK_COORDS", None),
+        )
 
         cfg.GEOFENCE_POLYGON = _generate_demo_geofence(own_lat, own_lon, cfg.DEMO_GEOFENCE_RADIUS_M)
 

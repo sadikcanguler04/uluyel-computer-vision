@@ -359,3 +359,32 @@ def test_wait_for_gps_fix_raises_on_timeout():
 
     with pytest.raises(RuntimeError):
         _wait_for_gps_fix(_NeverFixes(), timeout_sec=0.05, poll_interval_sec=0.01)
+
+
+def test_wait_for_gps_fix_uses_fallback_when_configured():
+    """GPS'siz test senaryosu: gerçek fix hiç gelmiyor ama fallback_coords verilmiş."""
+    class _NeverFixes:
+        def read_messages(self):
+            pass
+
+        def get_current_position(self, stale_sec):
+            return None, "NO_GPS"
+
+    position = _wait_for_gps_fix(
+        _NeverFixes(), timeout_sec=0.05, poll_interval_sec=0.01,
+        fallback_coords=(41.0, 29.0),
+    )
+
+    assert position == (41.0, 29.0)
+
+
+def test_wait_for_gps_fix_prefers_real_fix_over_fallback():
+    """Gerçek fix mevcutsa, fallback_coords verilmiş olsa bile gerçek konum kullanılmalı."""
+    pixhawk = _FakePixhawkNoFixThenFix(fixes_after=1, lat=41.5, lon=30.5)
+
+    position = _wait_for_gps_fix(
+        pixhawk, timeout_sec=5.0, poll_interval_sec=0.01,
+        fallback_coords=(0.0, 0.0),
+    )
+
+    assert position == (41.5, 30.5)

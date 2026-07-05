@@ -88,6 +88,66 @@ def test_get_current_position_stale_returns_none():
     assert status == "GPS_STALE"
 
 
+def test_get_current_position_rejects_zero_zero_placeholder():
+    """
+    Bulunan hata: ArduPilot, gerçek GPS fix'i olmasa bile GLOBAL_POSITION_INT'i
+    (EKF tahmini, genelde (0,0)) göndermeye devam eder. Bu, gerçek bir konum
+    olarak kabul edilmemeli.
+    """
+    reader = _fresh_reader()
+
+    reader.last_lat = 0.0
+    reader.last_lon = 0.0
+    reader.last_position_time = time.time()
+
+    value, status = reader.get_current_position(stale_sec=2.0)
+
+    assert value is None
+    assert status == "GPS_NO_FIX_ZERO_COORDS"
+
+
+def test_get_current_position_rejects_weak_gps_fix_type():
+    reader = _fresh_reader()
+
+    reader.last_lat = 41.0
+    reader.last_lon = 29.0
+    reader.last_position_time = time.time()
+    reader.last_gps_fix_type = 1  # NO_FIX (MAVLink GPS_FIX_TYPE)
+
+    value, status = reader.get_current_position(stale_sec=2.0, min_fix_type=2)
+
+    assert value is None
+    assert status == "GPS_FIX_TOO_WEAK(1)"
+
+
+def test_get_current_position_accepts_adequate_gps_fix_type():
+    reader = _fresh_reader()
+
+    reader.last_lat = 41.0
+    reader.last_lon = 29.0
+    reader.last_position_time = time.time()
+    reader.last_gps_fix_type = 3  # 3D_FIX
+
+    value, status = reader.get_current_position(stale_sec=2.0, min_fix_type=2)
+
+    assert status == "OK"
+    assert value == (41.0, 29.0)
+
+
+def test_get_current_position_ignores_fix_type_check_when_unknown():
+    """GPS_RAW_INT hiç gelmediyse (last_gps_fix_type=None) bu kontrol atlanır, sadece (0,0) kontrolüne güvenilir."""
+    reader = _fresh_reader()
+
+    reader.last_lat = 41.0
+    reader.last_lon = 29.0
+    reader.last_position_time = time.time()
+
+    value, status = reader.get_current_position(stale_sec=2.0, min_fix_type=2)
+
+    assert status == "OK"
+    assert value == (41.0, 29.0)
+
+
 def test_get_current_groundspeed_missing_returns_no_groundspeed():
     reader = _fresh_reader()
 
@@ -139,6 +199,7 @@ def test_read_messages_parses_attitude_position_groundspeed():
         _FakeMsg("ATTITUDE", roll=0.05, pitch=-0.02, yaw=1.2),
         _FakeMsg("GLOBAL_POSITION_INT", relative_alt=15000, lat=410000000, lon=290000000),
         _FakeMsg("VFR_HUD", groundspeed=17.3),
+        _FakeMsg("GPS_RAW_INT", fix_type=3),
     ])
 
     reader.read_messages()
@@ -150,3 +211,4 @@ def test_read_messages_parses_attitude_position_groundspeed():
     assert reader.last_lat == 41.0
     assert reader.last_lon == 29.0
     assert reader.last_groundspeed_mps == 17.3
+    assert reader.last_gps_fix_type == 3
