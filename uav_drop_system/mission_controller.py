@@ -12,14 +12,19 @@ Görev akışı:
   3. Vision pipeline + geolocation ile her iki hedef sınıfı da
      (2x2_TARGET=kırmızı, 4x4_TARGET=mavi) bağımsız olarak birikip
      medyanla sabitlenene kadar izlenir (localization/target_fix.py).
+     Bir hedef sınıfı BİR KEZ sabitlendikten sonra tekrar görülmesi
+     ikinci bir nokta/WP oluşturmaz — yalnızca İLK sabitlenme sayılır.
   4. İkisi de sabitlenince: kalan tarama WP'leri SİLİNİR, her iki hedef
-     için bırakma noktası hesaplanır (drop/ballistic + release_planner)
-     ve geofence ile doğrulanır (planning/geofence.py), ardından bu iki
-     nokta yeni bir mission olarak YÜKLENİR — sıralama HANGİSİ ÖNCE
-     BULUNDUYSA ona göre (en yakın olana göre DEĞİL): örn. önce kırmızı
-     bulunduysa, kırmızının bırakma noktası (mavi yükün bırakılacağı
-     yer) her zaman ilk WP olur.
-  5. İHA bu WP'lere yaklaştıkça, güvenlik koşulları sağlanınca ve
+     için hem bırakma noktası (drop/ballistic + release_planner) hem de
+     ondan önceki hizalanma/"X" noktası (planning/trajectory.py §11.1 —
+     uçağın düz bir hatta yaklaşabilmesi için en az 100m/MIN_ALIGNMENT_DISTANCE_M
+     önceden) hesaplanır ve ikisi de geofence ile doğrulanır
+     (planning/geofence.py). Her hedef için [hizalanma, bırakma] çifti
+     yeni bir mission olarak YÜKLENİR — sıralama HANGİSİ ÖNCE BULUNDUYSA
+     ona göre (en yakın olana göre DEĞİL): örn. önce kırmızı bulunduysa,
+     kırmızının hizalanma+bırakma WP'leri (mavi yükün bırakılacağı yer)
+     her zaman ilk sırada olur.
+  5. İHA bırakma noktalarına yaklaştıkça, güvenlik koşulları sağlanınca ve
      `config.FAZ2_DRIVES_RELEASE=True` olduğunda ilgili renkteki yük
      bırakılır (mavlink/servo_controller.DualPayloadServoController).
 
@@ -71,6 +76,7 @@ from mavlink.mission_uploader import MissionUploader
 from mavlink.pixhawk_reader import PixhawkReader
 from planning.geofence import check_point
 from planning.search_pattern import generate_lawnmower_waypoints
+from planning.trajectory import compute_alignment_distance
 from vision.detector import choose_best_candidate, find_perspective_squares
 from vision.tracker import TemporalTracker
 
@@ -167,6 +173,7 @@ class SearchAndDropMission:
 
         self.target_fixes = {}
         self.release_points = {}
+        self.alignment_points = {}
         self.release_order = []
         self.released = set()
         self.last_reason = "SEARCHING"
@@ -175,6 +182,18 @@ class SearchAndDropMission:
         cfg = self.cfg
 
         if not tracker_result["confirmed"] or best_candidate is None or distance_m is None:
+            return
+
+        target_class = best_candidate["target_class"]
+
+        if target_class not in TARGET_CLASSES:
+            return
+
+        # Bir hedef sınıfı bir kez sabitlendiyse (target_fixes'e girdiyse), o
+        # sınıf için BİR DAHA gözlem biriktirilmez/yeniden sabitlenmez —
+        # hedefi tekrar görmek ikinci bir WP/nokta oluşturmaz. Yalnızca İLK
+        # sabitlenmede WP ataması yapılır.
+        if target_class in self.target_fixes:
             return
 
         attitude, attitude_status = pixhawk.get_current_attitude(cfg.OBSERVATION_MAX_AGE_SEC)
@@ -187,10 +206,6 @@ class SearchAndDropMission:
         roll, pitch, yaw = attitude
         own_lat, own_lon = position
         u, v = best_candidate["center"]
-        target_class = best_candidate["target_class"]
-
-        if target_class not in TARGET_CLASSES:
-            return
 
         estimate = estimate_target_gps(
             u, v,
@@ -211,6 +226,13 @@ class SearchAndDropMission:
 
         if confirmed and target_class not in self.target_fixes:
             self.target_fixes[target_class] = (lat, lon)
+
+            color = _target_color_for_class(target_class)
+            print(
+                f"[INFO] Hedef sabitlendi: {target_class} ({color}) -> "
+                f"lat={lat:.7f}, lon={lon:.7f} "
+                f"({len(self.target_fixes)}/{len(TARGET_CLASSES)} bulundu)"
+            )
 
         if len(self.target_fixes) < len(TARGET_CLASSES):
             self.last_reason = f"SEARCHING({len(self.target_fixes)}/{len(TARGET_CLASSES)} bulundu)"
@@ -240,6 +262,13 @@ class SearchAndDropMission:
         t_total = compute_total_time(t_fall, cfg.SERVO_RELEASE_DELAY_SEC)
         lead_distance = compute_lead_distance(groundspeed, t_total, cfg.K_DROP)
 
+        # Modül 4 — proje_spec_uluyel_v2.md §11.1: bırakma noktasından ÖNCE,
+        # uçağın düz/kararlı bir hat tutabilmesi için en az MIN_ALIGNMENT_DISTANCE_M
+        # (varsayılan 100m) kadar önceden hizalanmış olması gereken "X noktası".
+        alignment_distance = compute_alignment_distance(
+            groundspeed, cfg.T_STABILIZE_SEC, cfg.MIN_ALIGNMENT_DISTANCE_M
+        )
+
         for target_class, (target_lat, target_lon) in self.target_fixes.items():
             target_north, target_east = gps_to_local_ned(own_lat, own_lon, target_lat, target_lon)
             release_north, release_east = compute_release_point_local(target_north, target_east, yaw, lead_distance)
@@ -251,7 +280,29 @@ class SearchAndDropMission:
                 self.last_reason = f"RELEASE_POINT_REJECTED({target_class}:{reason})"
                 return False
 
+            # X noktası (hizalanma noktası): aynı yaklaşma hattı üzerinde,
+            # bırakma noktasının alignment_distance kadar GERİSİNDE.
+            alignment_north, alignment_east = compute_release_point_local(
+                target_north, target_east, yaw, lead_distance + alignment_distance
+            )
+            alignment_lat, alignment_lon = ned_offset_to_gps(own_lat, own_lon, alignment_north, alignment_east)
+
+            valid_align, reason_align = check_point((alignment_lat, alignment_lon), cfg.GEOFENCE_POLYGON)
+
+            if not valid_align:
+                self.last_reason = f"ALIGNMENT_POINT_REJECTED({target_class}:{reason_align})"
+                return False
+
             self.release_points[target_class] = (release_lat, release_lon)
+            self.alignment_points[target_class] = (alignment_lat, alignment_lon)
+
+            print(
+                f"[INFO] Bırakma planı hesaplandı: {target_class} -> "
+                f"hizalanma_noktasi=({alignment_lat:.7f},{alignment_lon:.7f}) "
+                f"[{alignment_distance:.0f}m önce], "
+                f"birakma_noktasi=({release_lat:.7f},{release_lon:.7f}) "
+                f"[lead={lead_distance:.1f}m]"
+            )
 
         # Ziyaret sırası: HANGİ SIRAYLA BULUNDUYSA o sırayla (en yakın olana
         # göre değil). self.target_fixes bir dict olduğundan ve observe()
@@ -343,6 +394,7 @@ class SearchAndDropMission:
             "reason": self.last_reason,
             "fixed": list(self.target_fixes.keys()),
             "release_points": dict(self.release_points),
+            "alignment_points": dict(self.alignment_points),
             "released": list(self.released),
         }
 
@@ -496,12 +548,24 @@ def run():
                     uploader.clear_mission()
 
                     if mission.compute_release_plan(pixhawk):
-                        release_wp_list = [mission.release_points[tc] for tc in mission.release_order]
+                        # Her hedef için İKİ WP: önce hizalanma (X) noktası,
+                        # sonra bırakma noktası — proje_spec_uluyel_v2.md §11.1
+                        # (uçağın düz/kararlı bir hatta yaklaşabilmesi için).
+                        release_wp_list = []
+
+                        for tc in mission.release_order:
+                            release_wp_list.append(mission.alignment_points[tc])
+                            release_wp_list.append(mission.release_points[tc])
+
                         uploader.upload_waypoints(
                             release_wp_list, altitude_m=distance_m or cfg.SEARCH_NOMINAL_ALTITUDE_M
                         )
                         uploader.set_current_waypoint(0)
-                        print(f"[INFO] Bırakma mission'ı yüklendi: {mission.release_order}")
+                        print(
+                            f"[INFO] Bırakma mission'ı yüklendi: {len(release_wp_list)} WP "
+                            f"(hedef sırası: {mission.release_order}, her hedef için "
+                            f"[hizalanma, bırakma] çifti)"
+                        )
 
             elif mission.phase == SearchPhase.REPLANNED:
                 mission.check_arrival_and_release(pixhawk, servo_by_color)

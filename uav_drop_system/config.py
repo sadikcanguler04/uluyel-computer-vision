@@ -239,12 +239,19 @@ K_DROP = 1.0  # saha bırakma testleriyle güncellenmeli
 # =========================================================
 # FAZ 2 — Geofence (proje_spec_uluyel_v2.md §10)
 # =========================================================
-# Yarışma/uçuş sahasının gerçek sınır koordinatları henüz sağlanmadı.
-# GEOFENCE_POLYGON=None iken planning.geofence.check_geofence(...)
-# FAIL-SAFE davranır: geçerli kabul ETMEZ ve "GEOFENCE_NOT_CONFIGURED"
-# döner — yani gerçek poligon girilene kadar otonom bırakma bu adımda
-# bloke olur. Format: [(lat, lon), (lat, lon), ...] en az 3 köşe.
-GEOFENCE_POLYGON = None
+# GERÇEK saha sınırı — kullanıcı tarafından sahada ölçülüp verildi
+# (Sivas bölgesi test alanı). ⚠️ Kullanıcının verdiği enlem değerleri
+# NEGATİF işaretliydi (-39.7...) ama az önce Pixhawk'tan alınan gerçek
+# GPS fix (39.725327, 36.988062) POZİTİF ve bu poligonun tam ortasına
+# düşüyor — bu yüzden eksi işaretinin bir kopyalama hatası olduğu
+# varsayılıp POZİTİF olarak girildi. YANLIŞSA DÜZELTİLMELİ.
+# Format: [(lat, lon), (lat, lon), ...] — en az 3 köşe.
+GEOFENCE_POLYGON = [
+    (39.726132, 36.986276),
+    (39.726966, 36.990984),
+    (39.725269, 36.990341),
+    (39.724244, 36.987461),
+]
 GEOFENCE_LINE_SAMPLES = 20
 GEOFENCE_CIRCLE_SAMPLES = 36
 

@@ -73,6 +73,8 @@ def _cfg(**overrides):
         GRAVITY_G=9.81,
         SERVO_RELEASE_DELAY_SEC=0.20,
         K_DROP=1.0,
+        T_STABILIZE_SEC=6.0,
+        MIN_ALIGNMENT_DISTANCE_M=100.0,
         GEOFENCE_POLYGON=[(40.9, 28.9), (41.1, 28.9), (41.1, 29.1), (40.9, 29.1)],
         RELEASE_DISTANCE_THRESHOLD_M=500.0,
         V_STALL_MPS=10.0,
@@ -140,6 +142,56 @@ def test_compute_release_plan_succeeds_with_configured_geofence():
     assert mission.phase == SearchPhase.REPLANNED
     assert set(mission.release_points.keys()) == set(TARGET_CLASSES)
     assert len(mission.release_order) == 2
+
+
+def test_compute_release_plan_also_computes_alignment_points():
+    """
+    Modül 4 (proje_spec_uluyel_v2.md §11.1): her hedef için, bırakma
+    noktasının da gerisinde bir "hizalanma (X) noktası" hesaplanmalı.
+    """
+    mission = SearchAndDropMission(_cfg())
+    pixhawk = _FakePixhawk(groundspeed=18.0)
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    _observe_until_fixed(mission, pixhawk, "4x4_TARGET")
+
+    assert mission.compute_release_plan(pixhawk) is True
+    assert set(mission.alignment_points.keys()) == set(TARGET_CLASSES)
+
+    # Hizalanma noktası, bırakma noktasından daha uzakta olmalı (aynı hat
+    # üzerinde, geriye doğru) — yani uçağın konumuna (0,0 yerel) olan mesafesi
+    # bırakma noktasınınkinden büyük olmalı.
+    for target_class in TARGET_CLASSES:
+        align_lat, align_lon = mission.alignment_points[target_class]
+        release_lat, release_lon = mission.release_points[target_class]
+
+        align_n, align_e = gps_to_local_ned(pixhawk.lat, pixhawk.lon, align_lat, align_lon)
+        release_n, release_e = gps_to_local_ned(pixhawk.lat, pixhawk.lon, release_lat, release_lon)
+
+        align_dist = (align_n ** 2 + align_e ** 2) ** 0.5
+        release_dist = (release_n ** 2 + release_e ** 2) ** 0.5
+
+        assert align_dist > release_dist
+
+
+def test_observing_already_fixed_target_does_not_change_its_fix():
+    """Bir hedef sabitlendikten sonra tekrar görülmesi ikinci bir WP/nokta oluşturmamalı."""
+    mission = SearchAndDropMission(_cfg())
+    pixhawk = _FakePixhawk()
+
+    _observe_until_fixed(mission, pixhawk, "2x2_TARGET")
+    first_fix = mission.target_fixes["2x2_TARGET"]
+
+    # Aynı hedefi FARKLI bir piksel merkeziyle (farklı bir GPS tahmini
+    # üretecek şekilde) tekrar "gör" — sabitlenmiş değer DEĞİŞMEMELİ.
+    tracker_result = {"confirmed": True, "class_count": 5, "target_class": "2x2_TARGET"}
+    mission.observe(
+        now=10.0, pixhawk=pixhawk, tracker_result=tracker_result,
+        best_candidate=_candidate("2x2_TARGET", center=(500, 400)),
+        distance_m=30.0,
+    )
+
+    assert mission.target_fixes["2x2_TARGET"] == first_fix
 
 
 def test_release_order_follows_discovery_order_not_distance():
