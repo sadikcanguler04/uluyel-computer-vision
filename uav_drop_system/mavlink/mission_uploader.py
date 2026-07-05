@@ -68,7 +68,17 @@ class MissionUploader:
             raise MissionUploadError("Boş waypoint listesi yüklenemez.")
 
         altitude_m = altitude_m if altitude_m is not None else self.default_altitude_m
-        count = len(waypoints)
+
+        # ArduPilot mission protokolünde seq=0 HER ZAMAN "home" için
+        # ayrılmıştır — ArduPilot bu item'in içeriğini yok sayıp kendi
+        # GPS/EKF home konumunu kullanır, ama index'i tüketir. Eğer
+        # waypoints[0]'ı seq=0 olarak gönderirsek, ArduPilot onu sessizce
+        # home yerine geçirir ve listemizdeki GERÇEK ilk komutu hiç
+        # uçmaz — sahada tam olarak gözlemlenen hata buydu (4 WP
+        # gönderilip 3'ü uçulmuş, ilk uçulan WP bizim listemizdeki 2.
+        # sıradaki nokta gibi görünmüştü). Bu yüzden gerçek waypoint'ler
+        # seq=1'den başlar, toplam sayı +1'dir.
+        count = len(waypoints) + 1
 
         self.master.mav.mission_count_send(
             self.target_system,
@@ -96,7 +106,12 @@ class MissionUploader:
             if seq >= count:
                 raise MissionUploadError(f"Pixhawk geçersiz seq istedi: {seq} (toplam {count}).")
 
-            lat, lon = waypoints[seq]
+            if seq == 0:
+                # Home yer tutucusu — ArduPilot içeriği yok sayar, sadece
+                # index'i "home" için ayırdığından değeri önemsizdir.
+                lat, lon = 0.0, 0.0
+            else:
+                lat, lon = waypoints[seq - 1]
 
             self.master.mav.mission_item_int_send(
                 self.target_system,
@@ -104,7 +119,7 @@ class MissionUploader:
                 seq,
                 mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
                 mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                1 if seq == 0 else 0,  # current
+                1 if seq == 1 else 0,  # current: gerçek ilk waypoint artık seq=1
                 1,                      # autocontinue
                 0, 0, 0, 0,             # param1-4 (kullanılmıyor)
                 int(round(lat * 1e7)),

@@ -480,7 +480,7 @@ def run():
 
     print("[INFO] Tarama mission'ı yükleniyor...")
     uploader.upload_waypoints(search_waypoints)
-    uploader.set_current_waypoint(0)
+    uploader.set_current_waypoint(1)  # seq=0 ArduPilot'ta home'dur, gerçek ilk WP seq=1
 
     print("[UYARI] Uçağı AUTO moda alıp taramayı başlatmak PİLOTUN/GCS'nin sorumluluğundadır.")
     print("[UYARI] Bu script uçuş modunu DEĞİŞTİRMEZ.")
@@ -582,7 +582,7 @@ def run():
                         uploader.upload_waypoints(
                             release_wp_list, altitude_m=distance_m or cfg.SEARCH_NOMINAL_ALTITUDE_M
                         )
-                        uploader.set_current_waypoint(0)
+                        uploader.set_current_waypoint(1)  # seq=0 ArduPilot'ta home'dur, gerçek ilk WP seq=1
                         print(
                             f"[INFO] Bırakma mission'ı yüklendi: {len(release_wp_list)} WP "
                             f"(hedef sırası: {mission.release_order}, her hedef için "
