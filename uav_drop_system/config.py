@@ -127,6 +127,16 @@ MAX_BBOX_AREA_RATIO = 0.35
 # =========================================================
 # Perspektif kare / dörtgen algılama ayarları
 # =========================================================
+# Canny kenar tespiti eşikleri. old_docs/vision_servo_trigger.py'de sabit
+# (20,70) olarak kodlanmıştı, buraya (davranış değişmeden) taşındı.
+# Eski kodun kendi yorumu: "Kenarlar fazla gürültülü çıkarsa 30,100 yap.
+# Hedef zayıf görünüyorsa 15,60 yap." — dış mekanda dokulu/gürültülü
+# zeminlerde (örn. parke taş) arka plan tek bir büyük kenar kütlesi
+# haline gelip hedefleri "delik" gibi yutabilir (RETR_EXTERNAL yalnızca
+# dış konturu görür); bu durumda CANNY_LOW/HIGH'ı yükseltmek yardımcı olur.
+CANNY_LOW = 20
+CANNY_HIGH = 70
+
 APPROX_EPSILON = 0.035
 
 QUAD_ANGLE_MIN = 30

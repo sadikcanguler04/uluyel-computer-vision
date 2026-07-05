@@ -44,3 +44,34 @@ def test_debug_rejections_collects_shape_stage_failures_not_otherwise_visible():
     assert candidates == []
     assert rejected_candidates == []  # eskiden olduğu gibi (davranış korunuyor)
     assert "TOO_SMALL" in debug_rejections  # ama artık debug kanalından görülebiliyor
+
+
+def test_default_canny_thresholds_match_legacy_prototype():
+    """old_docs/vision_servo_trigger.py'de sabit kodlanmış (20,70) ile aynı olmalı (davranış korunuyor)."""
+    assert config.CANNY_LOW == 20
+    assert config.CANNY_HIGH == 70
+
+
+def test_canny_thresholds_are_actually_read_from_config():
+    """
+    Saha teşhisi (dokulu/gürültülü dış mekan zemini): CANNY_LOW/HIGH artık
+    sabit kodlanmış değil, config'ten okunuyor — farklı eşikler farklı
+    edge çıktısı üretmeli (böylece sahada config.py düzenleyerek
+    denenebilir, kod değiştirmeye gerek kalmadan).
+    """
+    rng = np.random.default_rng(42)
+    frame = rng.integers(0, 256, size=(config.HEIGHT, config.WIDTH, 3), dtype=np.uint8)
+
+    original_low, original_high = config.CANNY_LOW, config.CANNY_HIGH
+
+    try:
+        config.CANNY_LOW, config.CANNY_HIGH = 5, 20
+        _c, _r, edges_sensitive = find_perspective_squares(frame, 30.0, "LAB", config)
+
+        config.CANNY_LOW, config.CANNY_HIGH = 200, 250
+        _c, _r, edges_strict = find_perspective_squares(frame, 30.0, "LAB", config)
+    finally:
+        config.CANNY_LOW, config.CANNY_HIGH = original_low, original_high
+
+    # Düşük eşik (hassas) daha fazla, yüksek eşik (katı) daha az kenar piksel üretmeli.
+    assert cv2.countNonZero(edges_sensitive) > cv2.countNonZero(edges_strict)

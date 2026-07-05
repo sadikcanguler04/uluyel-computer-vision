@@ -167,7 +167,7 @@ def find_perspective_squares(frame_bgr, distance_m, distance_source, cfg, debug_
 
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
 
-    edges = cv2.Canny(blurred, 20, 70)
+    edges = cv2.Canny(blurred, cfg.CANNY_LOW, cfg.CANNY_HIGH)
 
     kernel = np.ones((3, 3), np.uint8)
 
