@@ -59,6 +59,7 @@ from enum import Enum, auto
 import cv2
 
 import config
+import hud
 from camera_source import CameraSource
 from drop.ballistic import compute_fall_time, compute_lead_distance, compute_total_time
 from drop.release_planner import compute_release_point_local
@@ -432,6 +433,22 @@ def run():
         print("        mission'a yükleyecek, ama gerçek renkli servo bırakmasını")
         print("        YAPAMAYACAK (NO_SERVO_FOR_COLOR olarak loglanır).")
 
+    def _servo_status_text():
+        if not servo_by_color:
+            return "Servo: NOT CONFIGURED (NO_SERVO_FOR_COLOR)"
+
+        lock = next(iter(servo_by_color.values())).payload_lock
+        blue = "RELEASED" if not lock.blue_payload_available else "available"
+        red = "RELEASED" if not lock.red_payload_available else "available"
+        return f"Blue payload: {blue} | Red payload: {red}"
+
+    show_edges = cfg.SHOW_EDGES
+    show_rejected = cfg.SHOW_REJECTED
+
+    prev_time = time.time()
+    frame_count = 0
+    fps = 0.0
+
     try:
         while True:
             now = time.time()
@@ -442,7 +459,9 @@ def run():
                 cfg.LAB_TEST_MODE, cfg.LAB_TEST_DISTANCE_M, cfg.MIN_VALID_ALTITUDE_M, cfg.ALTITUDE_STALE_SEC,
             )
 
-            candidates, _rejected, _edges = find_perspective_squares(frame_bgr, distance_m, distance_source, cfg)
+            candidates, rejected_candidates, edges = find_perspective_squares(
+                frame_bgr, distance_m, distance_source, cfg
+            )
             best_candidate = choose_best_candidate(candidates)
             tracker_result = tracker.update(now, best_candidate)
 
@@ -466,17 +485,61 @@ def run():
 
             status = mission.status()
 
-            cv2.putText(
-                frame_bgr, f"MISSION: {status['phase']} | {status['reason']}",
-                (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2,
+            frame_count += 1
+
+            if now - prev_time >= 1.0:
+                fps = frame_count / (now - prev_time)
+                frame_count = 0
+                prev_time = now
+
+            hud.draw_vision_hud(
+                frame_bgr, cfg,
+                candidates, rejected_candidates, best_candidate,
+                tracker, tracker_result, now,
+                distance_m, distance_source,
+                show_edges, show_rejected, fps,
+                servo_status_text=_servo_status_text(),
             )
 
+            mission_color = (0, 255, 0) if status["phase"] == "DONE" else (255, 200, 0)
+
+            cv2.putText(
+                frame_bgr, f"MISSION: {status['phase']} | {status['reason']}",
+                (30, hud.NEXT_FREE_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, mission_color, 2,
+            )
+
+            cv2.putText(
+                frame_bgr,
+                f"Fixed={status['fixed']} Released={status['released']}",
+                (30, hud.NEXT_FREE_Y + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, mission_color, 1,
+            )
+
+            hud.draw_calibration_warning(frame_bgr, cfg)
+            hud.draw_lab_test_banner(frame_bgr, cfg)
+
             cv2.imshow("Search and Drop Mission", frame_bgr)
+
+            if show_edges:
+                cv2.imshow("Edges", edges)
 
             key = cv2.waitKey(1) & 0xFF
 
             if key == ord("q"):
                 break
+
+            elif key == ord("e"):
+                show_edges = not show_edges
+                print(f"[INFO] SHOW_EDGES = {show_edges}")
+
+                if not show_edges:
+                    try:
+                        cv2.destroyWindow("Edges")
+                    except Exception:
+                        pass
+
+            elif key == ord("r"):
+                show_rejected = not show_rejected
+                print(f"[INFO] SHOW_REJECTED = {show_rejected}")
 
     except KeyboardInterrupt:
         print("\n[INFO] Kullanıcı durdurdu.")

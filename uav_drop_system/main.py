@@ -39,6 +39,7 @@ import time
 import cv2
 
 import config
+import hud
 from camera_source import CameraSource
 from drop.ballistic import compute_fall_time, compute_lead_distance, compute_total_time
 from drop.release_planner import compute_release_point_local
@@ -295,45 +296,6 @@ def _check_runtime_mode(cfg):
         )
 
 
-def _draw_candidate(frame, info, confirm_last_confidence, accepted=True):
-    approx = info["approx"]
-    x, y, w, h = info["bbox"]
-    cx, cy = info["center"]
-
-    if accepted:
-        if info["confidence"] >= confirm_last_confidence:
-            color = (0, 255, 0)
-        else:
-            color = (0, 255, 255)
-    else:
-        color = (0, 0, 255)
-
-    cv2.polylines(frame, [approx], True, color, 3)
-    cv2.circle(frame, (cx, cy), 5, color, -1)
-
-    if info["estimated_min_m"] is not None and info["estimated_max_m"] is not None:
-        label = (
-            f"{info['target_class']} "
-            f"conf={info['confidence']:.2f} "
-            f"minM={info['estimated_min_m']:.2f} "
-            f"maxM={info['estimated_max_m']:.2f} "
-            f"R={info['red_ratio']:.2f} "
-            f"B={info['blue_ratio']:.2f} "
-            f"{info['reject_reason']}"
-        )
-    else:
-        label = (
-            f"{info['target_class']} "
-            f"min={info['min_side']:.1f}px "
-            f"{info['reject_reason']}"
-        )
-
-    cv2.putText(
-        frame, label, (x, max(20, y - 10)),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2
-    )
-
-
 def run():
     cfg = config
 
@@ -440,107 +402,6 @@ def run():
             # servo tetiklemesini ETKİLEMEZ — bkz. Faz2Pipeline docstring.
             faz2_status = faz2.step(now, pixhawk, result, best_candidate, distance_m)
 
-            if show_rejected:
-                for info in rejected_candidates:
-                    _draw_candidate(frame_bgr, info, cfg.CONFIRM_LAST_CONFIDENCE, accepted=False)
-
-            for info in candidates:
-                _draw_candidate(frame_bgr, info, cfg.CONFIRM_LAST_CONFIDENCE, accepted=True)
-
-            state_text = tracker.get_state_text(
-                best_candidate, result["confirmed"], result["class_count"]
-            )
-
-            if tracker.target_locked:
-                status_text = f"HEDEF KILITLI: {tracker.locked_class}"
-                status_color = (0, 255, 0)
-            elif result["confirmed"]:
-                status_text = f"HEDEF DOGRULANDI: {result['target_class']}"
-                status_color = (0, 255, 0)
-            elif best_candidate is not None:
-                status_text = f"{state_text}: {best_candidate['target_class']}"
-                status_color = (0, 255, 255)
-            else:
-                status_text = "HEDEF YOK"
-                status_color = (0, 0, 255)
-
-            cv2.putText(
-                frame_bgr, status_text, (30, 45),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.75, status_color, 3
-            )
-
-            if best_candidate is not None:
-                main_target_text = (
-                    f"MAIN: {best_candidate['target_class']} | "
-                    f"conf={best_candidate['confidence']:.2f} | "
-                    f"shape={best_candidate['shape_score']:.2f} "
-                    f"size={best_candidate['size_score']:.2f} "
-                    f"color={best_candidate['color_score']:.2f}"
-                )
-                cv2.putText(
-                    frame_bgr, main_target_text, (30, 82),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 255, 0), 2
-                )
-
-                color_text = (
-                    f"Color: {best_candidate['color_status']} | "
-                    f"red={best_candidate['red_ratio']:.2f} "
-                    f"blue={best_candidate['blue_ratio']:.2f}"
-                )
-                cv2.putText(
-                    frame_bgr, color_text, (30, 112),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 255, 0), 2
-                )
-
-            if distance_m is not None:
-                altitude_text = f"Distance source: {distance_source} | D={distance_m:.2f}m"
-            else:
-                altitude_text = f"Distance source: {distance_source} | D=N/A"
-
-            cv2.putText(
-                frame_bgr, altitude_text, (30, 145),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2
-            )
-
-            time_since_seen = (now - tracker.last_seen_time) if tracker.target_locked else 0.0
-
-            cv2.putText(
-                frame_bgr,
-                f"History: {result['class_count']}/{cfg.HISTORY_LENGTH} "
-                f"avgConf={result['avg_confidence']:.2f} | "
-                f"Lost={time_since_seen:.2f}/{cfg.TARGET_LOST_TIMEOUT_SEC:.1f}s",
-                (30, 175),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.50, (255, 255, 255), 2
-            )
-
-            cv2.putText(
-                frame_bgr, f"Servo active: {servo.servo_is_active}", (30, 205),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2
-            )
-
-            cv2.putText(
-                frame_bgr,
-                f"MIN_SIDE_LENGTH: {cfg.MIN_SIDE_LENGTH}px | K={cfg.CALIB_K_SHORT}",
-                (30, 235),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2
-            )
-
-            cv2.putText(
-                frame_bgr,
-                f"HSV: weak>{cfg.COLOR_WEAK_RATIO} strong>{cfg.COLOR_STRONG_RATIO} "
-                f"wrongReject>{cfg.WRONG_COLOR_REJECT_RATIO}",
-                (30, 265),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2
-            )
-
-            cv2.putText(
-                frame_bgr,
-                f"Accepted={len(candidates)} Rejected={len(rejected_candidates)} | "
-                f"Edges={show_edges} RejShow={show_rejected}",
-                (30, 292),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.47, (255, 255, 255), 2
-            )
-
             frame_count += 1
 
             if now - prev_time >= 1.0:
@@ -548,9 +409,13 @@ def run():
                 frame_count = 0
                 prev_time = now
 
-            cv2.putText(
-                frame_bgr, f"FPS: {fps:.1f}", (30, 320),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2
+            hud.draw_vision_hud(
+                frame_bgr, cfg,
+                candidates, rejected_candidates, best_candidate,
+                tracker, result, now,
+                distance_m, distance_source,
+                show_edges, show_rejected, fps,
+                servo_status_text=f"Servo active: {servo.servo_is_active}",
             )
 
             faz2_color = (0, 255, 0) if faz2_status["state"] == "RELEASED" else (255, 200, 0)
@@ -558,7 +423,7 @@ def run():
             cv2.putText(
                 frame_bgr,
                 f"FAZ2: {faz2_status['state']} | {faz2_status['reason']}",
-                (30, 345),
+                (30, hud.NEXT_FREE_Y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, faz2_color, 2
             )
 
@@ -567,22 +432,12 @@ def run():
                     frame_bgr,
                     f"Target GPS~=({faz2_status['target_lat']:.6f},{faz2_status['target_lon']:.6f}) "
                     f"Release GPS~={faz2_status['release_lat']} lead={faz2_status['lead_distance_m']}",
-                    (30, 368),
+                    (30, hud.NEXT_FREE_Y + 23),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, faz2_color, 1
                 )
 
-            if not cfg.CAMERA_CALIBRATED:
-                cv2.putText(
-                    frame_bgr, "KAMERA KALIBRE EDILMEDI - Faz2 sayilari yer tutucu",
-                    (30, 390),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2
-                )
-
-            if cfg.LAB_TEST_MODE:
-                cv2.putText(
-                    frame_bgr, "LAB_TEST_MODE = TRUE", (30, cfg.HEIGHT - 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2
-                )
+            hud.draw_calibration_warning(frame_bgr, cfg)
+            hud.draw_lab_test_banner(frame_bgr, cfg)
 
             cv2.imshow("Vision Servo Trigger - Strict HSV Mode", frame_bgr)
 
