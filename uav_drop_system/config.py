@@ -32,14 +32,16 @@ SERVO_45_PWM = 1250
 # Servo — YENİ dual-servo mimarisi
 # =========================================================
 # Kanal numaraları kullanıcı tarafından sahada DOĞRULANDI (gerçek Pixhawk
-# kablolaması):
-#   - Servo A (kanal 1): mavi yükü tutuyor, KIRMIZI hedef görülünce tetiklenir.
-#   - Servo B (kanal 5): kırmızı yükü tutuyor, MAVİ hedef görülünce tetiklenir.
+# kablolaması). Önceki kanallar (1 ve 5) MAV_CMD_DO_SET_SERVO'ya
+# MAV_RESULT_FAILED aldığından (muhtemelen BRD_PWM_COUNT/safety switch
+# kısıtı) 6 ve 7'ye taşındı:
+#   - Servo A (kanal 6): mavi yükü tutuyor, KIRMIZI hedef görülünce tetiklenir.
+#   - Servo B (kanal 7): kırmızı yükü tutuyor, MAVİ hedef görülünce tetiklenir.
 # ⚠️ PWM home/release değerleri HÂLÂ TAHMİNİ (kanıtlanmış legacy servo
 # değerleriyle 1000/1250 aynı tutuldu) — bunlar henüz deneme-yanılma ile
 # doğrulanmadı, gerçek mekanizma farklı bir PWM aralığı gerektirebilir.
-SERVO_A_BLUE_PAYLOAD_NO = 1      # DOĞRULANDI — Servo A -> mavi yük (kırmızı hedef görülünce)
-SERVO_B_RED_PAYLOAD_NO = 5       # DOĞRULANDI — Servo B -> kırmızı yük (mavi hedef görülünce)
+SERVO_A_BLUE_PAYLOAD_NO = 6      # DOĞRULANDI — Servo A -> mavi yük (kırmızı hedef görülünce)
+SERVO_B_RED_PAYLOAD_NO = 7       # DOĞRULANDI — Servo B -> kırmızı yük (mavi hedef görülünce)
 
 SERVO_A_HOME_PWM = 1000          # TAHMİN
 SERVO_A_RELEASE_PWM = 1250       # TAHMİN
