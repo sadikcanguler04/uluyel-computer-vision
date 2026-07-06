@@ -19,20 +19,8 @@ etkin çalışma yoluna dahil edilmez.
 """
 
 
-def set_servo_pwm(master, target_system, target_component, servo_no, pwm, ack_timeout_sec=1.0):
-    """
-    old_docs/vision_servo_trigger.py::set_servo_pwm'in taşınmış hâli.
-
-    Sahada karşılaşılan sorun: komut gönderiliyor ama servo fiziksel olarak
-    hareket etmiyor olabilir (en sık nedenler: Pixhawk/Cube safety switch
-    devre dışı bırakılmamış, ya da o kanalın SERVOx_FUNCTION parametresi
-    "Disabled" değil de uçuşla ilgili bir fonksiyona atanmış — bu durumda
-    ArduPilot'un kendi kontrol döngüsü PWM'i her çevrimde geri yazar).
-    Bunu ayırt edebilmek için artık MAV_CMD_DO_SET_SERVO'nun ArduPilot
-    tarafından gerçekten KABUL EDİLİP EDİLMEDİĞİ COMMAND_ACK ile okunup
-    konsola yazdırılıyor — gönderilen komutun kendisini DEĞİŞTİRMEZ,
-    yalnızca teşhis için ek geri bildirim sağlar.
-    """
+def set_servo_pwm(master, target_system, target_component, servo_no, pwm):
+    """old_docs/vision_servo_trigger.py::set_servo_pwm'in taşınmış hâli."""
     from pymavlink import mavutil
 
     print(f"[SERVO] Servo {servo_no} -> PWM {pwm}")
@@ -50,31 +38,6 @@ def set_servo_pwm(master, target_system, target_component, servo_no, pwm, ack_ti
         0,
         0
     )
-
-    ack = master.recv_match(type="COMMAND_ACK", blocking=True, timeout=ack_timeout_sec)
-
-    if ack is None:
-        print(
-            f"[SERVO][UYARI] Servo {servo_no}: {ack_timeout_sec:.1f}s içinde COMMAND_ACK "
-            "gelmedi — Pixhawk'ın komutu alıp almadığı belirsiz."
-        )
-        return
-
-    if getattr(ack, "command", None) != mavutil.mavlink.MAV_CMD_DO_SET_SERVO:
-        print(f"[SERVO][UYARI] Servo {servo_no}: ilgisiz bir ACK geldi (command={getattr(ack, 'command', None)}).")
-        return
-
-    result_entry = mavutil.mavlink.enums.get("MAV_RESULT", {}).get(ack.result)
-    result_name = result_entry.name if result_entry is not None else str(ack.result)
-
-    if ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        print(f"[SERVO] Servo {servo_no}: ACK -> {result_name}")
-    else:
-        print(
-            f"[SERVO][UYARI] Servo {servo_no}: Pixhawk komutu REDDETTİ ({result_name}) — "
-            "servo hareket etmeyecek. SERVOx_FUNCTION parametresini (Disabled/0 olmalı) "
-            "ve safety switch durumunu kontrol edin."
-        )
 
 
 class LegacyServoController:

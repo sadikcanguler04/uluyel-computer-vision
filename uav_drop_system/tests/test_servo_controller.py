@@ -23,21 +23,8 @@ class _RecordingMav:
 
 
 class _FakeMaster:
-    def __init__(self, ack_result=None, ack_command=None):
+    def __init__(self):
         self.mav = _RecordingMav()
-        self._ack_result = ack_result
-        self._ack_command = ack_command
-
-    def recv_match(self, type=None, blocking=True, timeout=None):
-        if self._ack_result is None:
-            return None  # gerçek donanımda olduğu gibi: ACK gelmedi (timeout)
-
-        from pymavlink import mavutil
-
-        return SimpleNamespace(
-            command=self._ack_command if self._ack_command is not None else mavutil.mavlink.MAV_CMD_DO_SET_SERVO,
-            result=self._ack_result,
-        )
 
 
 def test_payload_lock_defaults_available():
@@ -135,41 +122,3 @@ def test_set_servo_pwm_sends_expected_command():
 
     from pymavlink import mavutil
     assert master.mav.sent == [(mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 8, 1250)]
-
-
-def test_set_servo_pwm_warns_when_ack_never_arrives(capsys):
-    """Sahada karşılaşılan durum: komut gönderiliyor ama Pixhawk'tan hiç ACK gelmiyor."""
-    master = _FakeMaster(ack_result=None)
-    set_servo_pwm(master, target_system=1, target_component=1, servo_no=5, pwm=1250)
-
-    out = capsys.readouterr().out
-    assert "COMMAND_ACK" in out
-    assert "gelmedi" in out
-
-
-def test_set_servo_pwm_reports_accepted_ack(capsys):
-    from pymavlink import mavutil
-
-    master = _FakeMaster(ack_result=mavutil.mavlink.MAV_RESULT_ACCEPTED)
-    set_servo_pwm(master, target_system=1, target_component=1, servo_no=5, pwm=1250)
-
-    out = capsys.readouterr().out
-    assert "MAV_RESULT_ACCEPTED" in out
-    assert "UYARI" not in out
-
-
-def test_set_servo_pwm_warns_when_ack_denied(capsys):
-    """
-    Sahada tam olarak beklenecek senaryolardan biri: ArduPilot komutu REDDEDER
-    (ör. SERVOx_FUNCTION o kanalı başka bir amaca atamışsa) — servo fiziksel
-    olarak hareket etmez ama kod hiçbir hata fırlatmaz, bu yüzden ACK'i
-    okuyup açıkça uyarmak gerekiyor.
-    """
-    from pymavlink import mavutil
-
-    master = _FakeMaster(ack_result=mavutil.mavlink.MAV_RESULT_DENIED)
-    set_servo_pwm(master, target_system=1, target_component=1, servo_no=1, pwm=1250)
-
-    out = capsys.readouterr().out
-    assert "REDDETTİ" in out
-    assert "MAV_RESULT_DENIED" in out
